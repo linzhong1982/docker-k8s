@@ -1,5 +1,8 @@
 
 k8s-master 是 Master，k8s-node1 和 k8s-node2 是 Node。
+参考链接：
+https://yq.aliyun.com/articles/656601
+https://www.cnblogs.com/CloudMan6/p/8282367.html
 
 1 前期准备
 ------

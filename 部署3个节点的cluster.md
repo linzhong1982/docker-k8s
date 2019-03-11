@@ -1,21 +1,33 @@
 
 k8s-master 是 Master，k8s-node1 和 k8s-node2 是 Node。
+修改主机名及IP映射关系
+--------------
+hostnamectl set-hostname k8s-master
+hostnamectl set-hostname k8s-node1
+hostnamectl set-hostname k8s-node1
+
+修改>> /etc/hosts
+k8s-master 192.168.33.11
+k8s-node1 192.168.33.12
+k8s-node2 192.168.33.12
+
+修改域名服务器 /etc/resolv.conf
+vim /etc/resolv.conf
+nameserver 9.0.149.140
+nameserver 9.0.146.50（改成你自己机器的域名服务器）
+
 
 安装 Docker
 ------------------
 所有节点都需要安装 Docker。
-
 apt-get update && apt-get install docker.io
 
 
 安装 kubelet、kubeadm 和 kubectl
 ------------------
 在所有节点上安装 kubelet、kubeadm 和 kubectl。
-
 kubelet 运行在 Cluster 所有节点上，负责启动 Pod 和容器。
-
 kubeadm 用于初始化 Cluster。
-
 kubectl 是 Kubernetes 命令行工具。通过 kubectl 可以部署和管理应用，查看各种资源，创建、删除和更新各种组件。
 
 apt-get update && apt-get install -y apt-transport-https
@@ -25,6 +37,7 @@ deb https://mirrors.aliyun.com/kubernetes/apt/ kubernetes-xenial main
 EOF
 apt-get update
 apt-get install -y kubelet kubeadm kubectl
+
 如果安装指定版本：
 apt-get install kubeadm=1.10.2-00 kubectl=1.10.2-00 kubelet=1.10.2-00
 
@@ -79,7 +92,13 @@ docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.2.24
 docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.2.6
 
 拉取成功后需tag成原来的镜像名
-
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.13.4 k8s.gcr.io/kube-apiserver:v1.13.4 
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.13.4 k8s.gcr.io/kube-controller-manager:v1.13.4
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.13.4 k8s.gcr.io/kube-scheduler:v1.13.4
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy:v1.13.4 k8s.gcr.io/kube-proxy:v1.13.4
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.1 k8s.gcr.io/pause:3.1
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.2.24 k8s.gcr.io/etcd:3.2.24
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.2.6 k8s.gcr.io/coredns:1.2.6
 
 注意：
 ---
@@ -144,10 +163,102 @@ daemonset.extensions/kube-flannel-ds-ppc64le created
 daemonset.extensions/kube-flannel-ds-s390x created
 vagrant@ubuntu1804:~$ 
 
-===========
 kubeadm join 执行如下：
+===========
+root@ubuntu1804:/home/vagrant# kubeadm join 192.168.33.11:6443 --token 7guibg.3iwxlahq6idh15lc --discovery-token-ca-cert-hash sha256:8c7b4b6a3b8c212707333c4e14b2e2bb655b71fb35e055c3ec39e27b54a4b986
+[preflight] Running pre-flight checks
+[discovery] Trying to connect to API Server "192.168.33.11:6443"
+[discovery] Created cluster-info discovery client, requesting info from "https://192.168.33.11:6443"
+[discovery] Requesting info from "https://192.168.33.11:6443" again to validate TLS against the pinned public key
+[discovery] Cluster info signature and contents are valid and TLS certificate validates against pinned roots, will use API Server "192.168.33.11:6443"
+[discovery] Successfully established connection with API Server "192.168.33.11:6443"
+[join] Reading configuration from the cluster...
+[join] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -oyaml'
+[kubelet] Downloading configuration for the kubelet from the "kubelet-config-1.13" ConfigMap in the kube-system namespace
+[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
+[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
+[kubelet-start] Activating the kubelet service
+[tlsbootstrap] Waiting for the kubelet to perform the TLS Bootstrap...
+[patchnode] Uploading the CRI Socket information "/var/run/dockershim.sock" to the Node API object "k8s-node2" as an annotation
+
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+
+Run 'kubectl get nodes' on the master to see this node join the cluster.
 
 
+根据提示，我们可以通过 kubectl get nodes 查看节点的状态。
+=========
+vagrant@k8s-master:~$ kubectl get nodes
+NAME         STATUS     ROLES    AGE    VERSION
+k8s-master   Ready      master   21m    v1.13.4
+k8s-node1    NotReady   <none>   2m7s   v1.13.4
+k8s-node2    NotReady   <none>   6s     v1.13.4
+vagrant@k8s-master:~$ 
+vagrant@k8s-master:~$ 
+
+
+目前所有节点都是 NotReady，这是因为每个节点都需要启动若干组件，这些组件都是在 Pod 中运行，需要首先从 google 下载镜像，我们可以通过如下命令查看 Pod 的状态：
+kubectl get pod --all-namespaces
+========
+vagrant@k8s-master:~$ kubectl get pod --all-namespaces
+NAMESPACE     NAME                                 READY   STATUS              RESTARTS   AGE
+kube-system   coredns-86c58d9df4-6d9lb             1/1     Running             0          24m
+kube-system   coredns-86c58d9df4-8jwxv             1/1     Running             0          24m
+kube-system   etcd-k8s-master                      1/1     Running             0          24m
+kube-system   kube-apiserver-k8s-master            1/1     Running             0          24m
+kube-system   kube-controller-manager-k8s-master   1/1     Running             0          23m
+kube-system   kube-flannel-ds-amd64-drftw          1/1     Running             0          13m
+kube-system   kube-flannel-ds-amd64-q5fx5          0/1     Init:0/1            0          3m48s
+kube-system   kube-flannel-ds-amd64-wzcqj          0/1     Init:0/1            0          5m49s
+kube-system   kube-proxy-4kw5f                     0/1     ContainerCreating   0          3m48s
+kube-system   kube-proxy-6gk5c                     0/1     ContainerCreating   0          5m49s
+kube-system   kube-proxy-8vh7c                     1/1     Running             0          24m
+kube-system   kube-scheduler-k8s-master            1/1     Running             0          24m
+
+Pending、ContainerCreating、ImagePullBackOff 都表明 Pod 没有就绪，Running 才是就绪状态。我们可以通过 kubectl describe pod <Pod Name> 查看 Pod 具体情况，比如：
+kubectl describe pod kube-proxy-4kw5f --namespace=kube-system
+=========
+
+  Normal   Scheduled               5m44s                 default-scheduler   Successfully assigned kube-system/kube-proxy-4kw5f to k8s-node2
+  Warning  FailedCreatePodSandBox  99s (x12 over 5m37s)  kubelet, k8s-node2  Failed create pod sandbox: rpc error: code = Unknown desc = failed pulling image "k8s.gcr.io/pause:3.1": Error response from daemon: Get https://k8s.gcr.io/v2/: dial tcp: lookup k8s.gcr.io: Temporary failure in name resolution
+  Warning  DNSConfigForming        40s (x15 over 5m43s)  kubelet, k8s-node2  Nameserver limits were exceeded, some nameservers have been omitted, the applied nameserver line is: 4.2.2.1 4.2.2.2 208.67.220.220
+
+  说明 在k8s-node2 上需要的镜像文件没有获取到。
+
+ 执行拉去镜像操作
+ 换国内的镜像源拉取：
+========
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.13.4
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.13.4
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.13.4
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy:v1.13.4
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.1
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.2.24
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.2.6
+
+拉取成功后需tag成原来的镜像名
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.13.4 k8s.gcr.io/kube-apiserver:v1.13.4 
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.13.4 k8s.gcr.io/kube-controller-manager:v1.13.4
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.13.4 k8s.gcr.io/kube-scheduler:v1.13.4
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy:v1.13.4 k8s.gcr.io/kube-proxy:v1.13.4
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.1 k8s.gcr.io/pause:3.1
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.2.24 k8s.gcr.io/etcd:3.2.24
+docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.2.6 k8s.gcr.io/coredns:1.2.6
+
+
+systemctl start etcd
+systemctl start docker
+systemctl start kube-apiserver
+systemctl start kube-controller-manager
+systemctl start kube-scheduler
+systemctl start kubelet
+systemctl start kube-proxy
+
+
+
+本章通过 kubeadm 部署了三节点的 Kubernetes 集群，后面章节我们都将在这个实验环境中学习 Kubernetes 的各项技术。
 
 
 

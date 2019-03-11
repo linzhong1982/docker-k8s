@@ -1,30 +1,52 @@
 
 k8s-master 是 Master，k8s-node1 和 k8s-node2 是 Node。
-修改主机名及IP映射关系
---------------
+
+1 前期准备
+------
+
+1.1 修改主机名及IP映射关系
+==============
 hostnamectl set-hostname k8s-master
 hostnamectl set-hostname k8s-node1
 hostnamectl set-hostname k8s-node1
 
-修改>> /etc/hosts
+1.2 修改>> /etc/hosts
+==============
 k8s-master 192.168.33.11
 k8s-node1 192.168.33.12
 k8s-node2 192.168.33.12
 
-修改域名服务器 /etc/resolv.conf
+1.3 修改域名服务器 /etc/resolv.conf
+==============
 vim /etc/resolv.conf
 nameserver 9.0.149.140
 nameserver 9.0.146.50（改成你自己机器的域名服务器）
 
+1.4 关闭并禁用防火墙。
+==============
+systemctl stop firewalld
+systemctl disable firewalld
 
-安装 Docker
-------------------
+1.5 关闭SeLinux
+==============
+sed -i 's/enforcing/disabled/' /etc/selinux/config
+
+1.6 禁用swap 内存交换
+==============
+swapoff -a
+如果要永久禁止swap挂载，可以修改/etc/fstab，将与swap有关的配置注释，重启系统即可。
+
+2 安装
+-------------
+
+2.1 安装 Docker （三台机器分安装）
+==============
 所有节点都需要安装 Docker。
 apt-get update && apt-get install docker.io
 
 
-安装 kubelet、kubeadm 和 kubectl
-------------------
+2.2 安装 kubelet、kubeadm 和 kubectl（三台机器分安装）
+==============
 在所有节点上安装 kubelet、kubeadm 和 kubectl。
 kubelet 运行在 Cluster 所有节点上，负责启动 Pod 和容器。
 kubeadm 用于初始化 Cluster。
@@ -44,14 +66,17 @@ apt-get install kubeadm=1.10.2-00 kubectl=1.10.2-00 kubelet=1.10.2-00
 注意官方源 deb http://apt.kubernetes.io/ kubernetes-xenial main 下载不下来，改成aliyun
 
 
-用 kubeadm 创建 Cluster
-------------------
+3 用 kubeadm 创建 Cluster
+-----------------------
+
 完整的官方文档可以参考 https://kubernetes.io/docs/setup/independent/create-cluster-kubeadm/
 
-初始化 Master
+3.1 初始化 Master
+===================
 在 Master 上执行如下命令：
 
 kubeadm init --apiserver-advertise-address 192.168.33.11 --pod-network-cidr=10.244.0.0/16
+
 --apiserver-advertise-address 指明用 Master 的哪个 interface 与 Cluster 的其他节点通信。如果 Master 有多个 interface，建议明确指定，如果不指定，kubeadm 会自动选择有默认网关的 interface。
 
 --pod-network-cidr 指定 Pod 网络的范围。Kubernetes 支持多种网络方案，而且不同网络方案对 --pod-network-cidr 有自己的要求，这里设置为 10.244.0.0/16 是因为我们将使用 flannel 网络方案，必须设置成这个 CIDR。在后面的实践中我们会切换到其他网络方案，比如 Canal。
@@ -82,7 +107,7 @@ error execution phase preflight: [preflight] Some fatal errors occurred:
 	[ERROR ImagePull]: failed to pull image k8s.gcr.io/coredns:1.2.6: output: Error response from daemon: Get https://k8s.gcr.io/v2/: dial tcp: lookup k8s.gcr.io: Temporary failure in name resolution
   
 换国内的镜像源拉取：
-========
+==============
 docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.13.4
 docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.13.4
 docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.13.4
@@ -101,7 +126,7 @@ docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.2.24 k8s.g
 docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.2.6 k8s.gcr.io/coredns:1.2.6
 
 注意：
----
+==============
 如果出现一下错误
 Error response from daemon: Get https://registry.cn-hangzhou.aliyuncs.com/v2/: dial tcp: lookup registry.cn-hangzhou.aliyuncs.com: Temporary failure in name resolution
 
@@ -112,10 +137,10 @@ nameserver 192.168.35.2（改成你自己机器的域名服务器）
 
 
 配置 kubectl
--------
+==============
 kubectl 是管理 Kubernetes Cluster 的命令行工具，前面我们已经在所有的节点安装了 kubectl。Master 初始化完成后需要做一些配置工作，然后 kubectl 就能使用了。
 
-依照 kubeadm init 输出的第 ⑦ 步提示，推荐用 Linux 普通用户执行 kubectl（root 会有一些问题）。
+依照 kubeadm init 输出的第步提示，推荐用 Linux 普通用户执行 kubectl（root 会有一些问题）。
 
 我们为 ubuntu 用户配置 kubectl：
 
@@ -143,11 +168,13 @@ Kubernetes 支持多种网络方案，这里我们先使用 flannel，后面还�
 kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
 593.png
  
-添加 k8s-node1 和 k8s-node2
+3.2 添加 k8s-node1 和 k8s-node2
+==============
+
 在 k8s-node1 和 k8s-node2 上分别执行如下命令，将其注册到 Cluster 中：
 
 kubeadm join --token d38a01.13653e584ccc1980 192.168.56.105:6443
-这里的 --token 来自前面 kubeadm init 输出的第 ⑨ 步提示，如果当时没有记录下来可以通过 kubeadm token list 查看。
+这里的 --token 来自前面 'kubeadm init 输出的提示'，如果当时没有记录下来可以通过 kubeadm token list 查看。
 
 ===========
 vagrant@ubuntu1804:~$ kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
